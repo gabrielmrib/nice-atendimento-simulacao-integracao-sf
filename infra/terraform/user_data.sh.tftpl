@@ -1,0 +1,85 @@
+#!/bin/bash
+set -euo pipefail
+
+dnf install -y nodejs npm awscli-2 unzip python3 dnf-plugins-core
+dnf copr enable -y @caddy/caddy
+dnf install -y caddy
+
+mkdir -p /opt/betta-desk /etc/betta-desk
+aws s3 cp "s3://${source_bucket}/${source_key}" /tmp/betta-desk.zip --region "${aws_region}"
+unzip -q -o /tmp/betta-desk.zip -d /opt/betta-desk
+rm -f /tmp/betta-desk.zip
+chown -R ec2-user:ec2-user /opt/betta-desk
+runuser -u ec2-user -- npm --prefix /opt/betta-desk ci --omit=dev
+
+cat > /etc/betta-desk/runtime.json <<'BETTA_RUNTIME_JSON'
+${runtime_config_json}
+BETTA_RUNTIME_JSON
+chmod 600 /etc/betta-desk/runtime.json
+
+cat > /usr/local/bin/betta-desk-run.py <<'BETTA_RUNNER'
+#!/usr/bin/python3
+import json
+import os
+import subprocess
+
+with open('/etc/betta-desk/runtime.json', encoding='utf-8') as config_file:
+    config = json.load(config_file)
+
+def get_parameter(name):
+    parameter_name = config.get(name, '')
+    if not parameter_name:
+        return ''
+    result = subprocess.run(
+        ['aws', 'ssm', 'get-parameter', '--region', config['AWS_REGION'],
+         '--name', parameter_name, '--with-decryption', '--query', 'Parameter.Value', '--output', 'text'],
+        check=True, capture_output=True, text=True
+    )
+    return result.stdout.rstrip('\n')
+
+environment = os.environ.copy()
+for key, value in config.items():
+    if not key.startswith('_'):
+        environment[key] = str(value)
+environment['ADMIN_TOKEN'] = get_parameter('_ADMIN_TOKEN_PARAMETER_NAME')
+environment['INBOUND_API_KEY'] = get_parameter('_INBOUND_API_KEY_PARAMETER_NAME')
+if config.get('_SALESFORCE_SECRET_PARAMETER_NAME'):
+    environment['SALESFORCE_CLIENT_SECRET'] = get_parameter('_SALESFORCE_SECRET_PARAMETER_NAME')
+
+os.execvpe('node', ['node', '/opt/betta-desk/server.js'], environment)
+BETTA_RUNNER
+chmod 755 /usr/local/bin/betta-desk-run.py
+
+cat > /etc/systemd/system/betta-desk.service <<'BETTA_SERVICE'
+[Unit]
+Description=Betta Desk POC
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ec2-user
+Group=ec2-user
+WorkingDirectory=/opt/betta-desk
+ExecStart=/usr/local/bin/betta-desk-run.py
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+
+[Install]
+WantedBy=multi-user.target
+BETTA_SERVICE
+
+cat > /etc/caddy/Caddyfile <<'BETTA_CADDY'
+${app_domain} {
+    encode zstd gzip
+    reverse_proxy 127.0.0.1:433
+}
+BETTA_CADDY
+
+caddy validate --config /etc/caddy/Caddyfile
+systemctl daemon-reload
+systemctl enable --now betta-desk
+systemctl enable --now caddy

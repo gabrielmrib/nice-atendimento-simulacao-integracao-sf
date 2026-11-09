@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f4f6f2">
+  <title>Betta Desk | Console de atendimento</title>
+  <link rel="stylesheet" href="/vendor/bootstrap/css/bootstrap.min.css">
+  <link rel="stylesheet" href="/vendor/bootstrap-icons/bootstrap-icons.min.css">
+  <link rel="stylesheet" href="/css/styles.css">
+</head>
+<body>
+  <div class="app-frame">
+    <header class="topbar">
+      <a class="brand-lockup" href="/" aria-label="Betta Desk início">
+        <span class="brand-mark"><i class="bi bi-chat-square-dots-fill"></i></span>
+        <span><strong>betta</strong><small>ATENDIMENTO DIGITAL</small></span>
+      </a>
+      <div class="topbar-center">
+        <span class="eyebrow">AMBIENTE DE SIMULAÇÃO</span>
+        <span id="modeBadge" class="mode-badge"><span class="mode-dot"></span> Carregando modo</span>
+      </div>
+      <div class="topbar-actions">
+        <span id="socketStatus" class="connection-status"><span class="status-dot"></span><span>Conectando</span></span>
+        <button id="agentStatusButton" class="agent-status" type="button" aria-pressed="true">
+          <span class="agent-avatar">AC</span><span class="agent-copy"><strong>Atendente</strong><small id="agentStatusText">Disponível</small></span>
+          <i class="bi bi-chevron-down"></i>
+        </button>
+      </div>
+    </header>
+
+    <div class="workspace-heading">
+      <div>
+        <p class="section-kicker">OPERAÇÃO / WHATSAPP</p>
+        <h1>Central de atendimento</h1>
+        <span id="mobileModeBadge" class="mode-badge mobile-mode-badge"><span class="mode-dot"></span> Simulado local</span>
+      </div>
+      <div class="heading-actions">
+        <span class="local-note"><i class="bi bi-shield-check"></i> Dados de demonstração</span>
+        <button id="connectionConfigButton" class="btn btn-outline-secondary btn-sm" type="button" title="Configurar conexão Salesforce"><i class="bi bi-plug"></i><span class="connection-button-label">Configurar conexão</span></button>
+        <button id="seedButton" class="btn btn-primary btn-sm"><i class="bi bi-plus-lg"></i><span>Simular conversa</span></button>
+        <button id="resetButton" class="btn btn-outline-secondary btn-sm" title="Limpar conversas de demonstração"><i class="bi bi-arrow-counterclockwise"></i><span class="d-none d-md-inline">Limpar demo</span></button>
+      </div>
+    </div>
+
+    <nav class="mobile-panel-tabs d-lg-none" aria-label="Painéis da central">
+      <button class="mobile-tab" data-panel="queuePanel"><i class="bi bi-inboxes"></i>Fila <span id="mobileQueueCount" class="tab-count">0</span></button>
+      <button class="mobile-tab active" data-panel="chatPanel"><i class="bi bi-chat-left-text"></i>Conversa</button>
+      <button class="mobile-tab" data-panel="contextPanel"><i class="bi bi-person-vcard"></i>Contexto</button>
+    </nav>
+
+    <main class="console-grid">
+      <aside id="queuePanel" class="workspace-panel queue-panel" aria-label="Fila de atendimentos">
+        <div class="panel-heading queue-heading">
+          <div><p class="panel-overline">AO VIVO</p><h2>Fila de atendimento</h2></div>
+          <span id="queueCount" class="count-pill">0</span>
+        </div>
+        <div class="queue-tools">
+          <label class="search-field"><i class="bi bi-search"></i><input id="searchInput" type="search" placeholder="Buscar conversa" aria-label="Buscar conversa"></label>
+          <select id="channelFilter" class="form-select form-select-sm" aria-label="Filtrar por canal">
+            <option value="all">Todos os canais</option>
+            <option value="whatsapp">WhatsApp</option>
+            <option value="messagem">Outros</option>
+          </select>
+        </div>
+        <div class="queue-section-label"><span>AGUARDANDO</span><span id="waitingCount">0</span></div>
+        <div id="queueList" class="conversation-list" aria-live="polite"></div>
+        <div id="queueEmpty" class="queue-empty">
+          <span class="empty-icon"><i class="bi bi-inboxes"></i></span>
+          <strong>Nenhuma conversa na fila</strong>
+          <span>Simule uma conversa ou envie um evento para a API.</span>
+          <button class="btn btn-sm btn-outline-primary" id="emptySeedButton"><i class="bi bi-plus-lg"></i> Criar demonstração</button>
+        </div>
+        <div class="queue-section-label active-section-label"><span>EM ATENDIMENTO</span><span id="activeCount">0</span></div>
+        <div id="activeList" class="conversation-list active-conversation-list" aria-live="polite"></div>
+        <div class="queue-footer"><span class="live-pulse"></span>Atualização em tempo real</div>
+      </aside>
+
+      <section id="chatPanel" class="workspace-panel chat-panel" aria-label="Conversa ativa">
+        <div id="chatEmpty" class="chat-empty-state">
+          <div class="chat-empty-art"><i class="bi bi-chat-square-heart"></i><span></span></div>
+          <p class="panel-overline">SUA PRÓXIMA CONVERSA</p>
+          <h2>O atendimento começa aqui.</h2>
+          <p>Selecione uma conversa na fila ou crie uma demonstração para explorar o fluxo completo.</p>
+          <button id="chatSeedButton" class="btn btn-primary"><i class="bi bi-plus-lg"></i> Simular conversa</button>
+        </div>
+        <div id="chatContent" class="chat-content d-none">
+          <header class="chat-header">
+            <div class="customer-heading">
+              <span id="customerAvatar" class="customer-avatar">?</span>
+              <div><h2 id="customerName">Cliente</h2><p><span id="customerChannel">WhatsApp</span><span class="meta-separator">·</span><span id="customerSession">Sessão</span></p></div>
+            </div>
+            <div class="chat-header-actions">
+              <button id="acceptButton" class="btn btn-primary btn-sm d-none" type="button"><i class="bi bi-headset"></i><span>Aceitar</span></button>
+              <span id="conversationState" class="state-pill">Na fila</span>
+              <button id="simulateInboundButton" class="icon-button" type="button" title="Simular mensagem do cliente" aria-label="Simular mensagem do cliente"><i class="bi bi-chat-dots"></i></button>
+              <button id="closeButton" class="btn btn-outline-danger btn-sm" type="button"><i class="bi bi-check2-circle"></i><span>Encerrar</span></button>
+            </div>
+          </header>
+          <div id="deliveryBanner" class="delivery-banner d-none" role="status"></div>
+          <div id="messagesList" class="messages-list" aria-live="polite" aria-relevant="additions"></div>
+          <div id="readOnlyNotice" class="read-only-notice d-none"><i class="bi bi-info-circle"></i> Aceite o atendimento para responder.</div>
+          <form id="composerForm" class="composer">
+            <label class="visually-hidden" for="messageInput">Mensagem</label>
+            <textarea id="messageInput" rows="1" placeholder="Escreva sua mensagem..." maxlength="4000" disabled></textarea>
+            <div class="composer-footer"><span><kbd>Enter</kbd> enviar <span class="key-divider">·</span> <kbd>Shift + Enter</kbd> nova linha</span><button id="sendButton" class="btn btn-primary btn-sm" type="submit" disabled><i class="bi bi-send-fill"></i><span>Enviar</span></button></div>
+          </form>
+        </div>
+      </section>
+
+      <aside id="contextPanel" class="workspace-panel context-panel" aria-label="Dados do atendimento">
+        <div class="panel-heading context-heading"><div><p class="panel-overline">VISÃO DO CLIENTE</p><h2>Contexto</h2></div><i class="bi bi-person-lines-fill context-heading-icon"></i></div>
+        <div id="contextEmpty" class="context-empty"><i class="bi bi-person-vcard"></i><span>Os dados do cliente aparecem ao selecionar uma conversa.</span></div>
+        <div id="contextContent" class="context-content d-none">
+          <div class="context-customer"><span id="contextAvatar" class="customer-avatar large">?</span><div><strong id="contextName">Cliente</strong><span id="contextChannelText">Canal</span></div></div>
+          <section class="context-section">
+            <div class="context-section-title"><h3>Dados cadastrais</h3><button id="privacyToggle" class="text-action" type="button" aria-pressed="false">Revelar</button></div>
+            <dl class="detail-list"><div><dt>CPF</dt><dd id="contextCpf">Não informado</dd></div><div><dt>Telefone</dt><dd id="contextPhone">Não informado</dd></div><div><dt>E-mail</dt><dd id="contextEmail">Não informado</dd></div></dl>
+          </section>
+          <section class="context-section">
+            <div class="context-section-title"><h3>Operação</h3></div>
+            <dl class="detail-list"><div><dt>Canal de operação</dt><dd id="contextOperation">Não informado</dd></div><div><dt>Fila NICE</dt><dd id="contextQueue">Não informada</dd></div><div><dt>Skill ID</dt><dd id="contextSkill">Não informado</dd></div><div><dt>Instância</dt><dd id="contextInstance">Não informada</dd></div></dl>
+          </section>
+          <section class="context-section session-section">
+            <div class="context-section-title"><h3>Identificador Salesforce</h3></div>
+            <div class="identifier-box"><code id="contextIdentifier">—</code><button id="copyIdentifier" class="icon-button small" type="button" title="Copiar identificador" aria-label="Copiar identificador"><i class="bi bi-copy"></i></button></div>
+          </section>
+          <details class="extra-details"><summary>Outros dados <i class="bi bi-chevron-down"></i></summary><pre id="contextExtra">{}</pre></details>
+        </div>
+        <div class="context-footer"><i class="bi bi-lock"></i> Dados disponíveis apenas nesta sessão local</div>
+      </aside>
+    </main>
+    <footer class="app-footer"><span>BETTA DESK <span class="footer-dot">/</span> SIMULADOR LOCAL</span><span>Console de atendimento para testes</span></footer>
+  </div>
+
+  <div class="modal fade" id="adminAuthModal" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false" aria-labelledby="adminAuthTitle" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-sm"><div class="modal-content">
+      <form id="adminAuthForm">
+        <div class="modal-header"><h2 class="modal-title" id="adminAuthTitle">Acesso à central</h2></div>
+        <div class="modal-body"><p class="auth-description">Informe a chave administrativa configurada no ambiente AWS.</p><label for="adminTokenInput" class="form-label">Chave administrativa</label><input id="adminTokenInput" class="form-control" type="password" autocomplete="current-password" required><div id="adminAuthError" class="invalid-feedback"></div></div>
+        <div class="modal-footer"><button id="adminAuthSubmit" class="btn btn-primary btn-sm" type="submit">Entrar</button></div>
+      </form>
+    </div></div>
+  </div>
+
+  <div class="modal fade" id="connectionModal" tabindex="-1" aria-labelledby="connectionModalTitle" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg"><div class="modal-content">
+      <form id="connectionForm">
+        <div class="modal-header"><div><p class="panel-overline mb-1">SERVICE CLOUD / OAUTH 2.0</p><h2 class="modal-title" id="connectionModalTitle">Configurar conexão</h2></div><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button></div>
+        <div class="modal-body">
+          <div class="alert alert-warning connection-warning"><i class="bi bi-shield-lock"></i><span>Segredos enviados por esta tela ficam somente na memória do servidor até reiniciar. Para persistir na AWS, use SSM Parameter Store ou Secrets Manager. Use HTTPS.</span></div>
+          <div class="row g-3">
+            <div class="col-md-4"><label for="callbackModeInput" class="form-label">Modo de callback</label><select id="callbackModeInput" class="form-select"><option value="mock">Simulação local</option><option value="http">Salesforce HTTP</option></select></div>
+            <div class="col-md-8"><label for="sfTokenUrlInput" class="form-label">OAuth token URL</label><input id="sfTokenUrlInput" class="form-control" type="url" placeholder="https://login.salesforce.com/services/oauth2/token" required></div>
+            <div class="col-12"><label for="sfWebhookUrlInput" class="form-label">Apex REST callback URL</label><input id="sfWebhookUrlInput" class="form-control" type="url" placeholder="https://org.my.salesforce.com/services/apexrest/BettaWebhookCallback"></div>
+            <div class="col-md-6"><label for="sfClientIdInput" class="form-label">Connected App / External Client App Client ID</label><input id="sfClientIdInput" class="form-control" type="text" autocomplete="off"></div>
+            <div class="col-md-6"><label for="sfClientSecretInput" class="form-label">Client Secret <span id="clientSecretHint" class="text-secondary"></span></label><input id="sfClientSecretInput" class="form-control" type="password" autocomplete="new-password" placeholder="Em branco mantém o segredo atual"></div>
+          </div>
+          <div id="connectionFeedback" class="connection-feedback d-none" role="status"></div>
+        </div>
+        <div class="modal-footer"><span id="connectionStateLabel" class="connection-state-label me-auto">Não testada</span><button id="testConnectionButton" class="btn btn-outline-primary btn-sm" type="button"><i class="bi bi-plug"></i> Testar OAuth</button><button id="saveConnectionButton" class="btn btn-primary btn-sm" type="submit"><i class="bi bi-check2"></i> Salvar configuração</button></div>
+      </form>
+    </div></div>
+  </div>
+
+  <div class="modal fade" id="closeModal" tabindex="-1" aria-labelledby="closeModalTitle" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-sm"><div class="modal-content">
+      <div class="modal-header"><h2 class="modal-title" id="closeModalTitle">Encerrar atendimento?</h2><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button></div>
+      <div class="modal-body">A conversa será marcada como encerrada. Essa ação pode enviar um callback ao Salesforce quando o modo HTTP estiver ativo.</div>
+      <div class="modal-footer"><button type="button" class="btn btn-light btn-sm" data-bs-dismiss="modal">Continuar atendendo</button><button id="confirmCloseButton" type="button" class="btn btn-danger btn-sm">Encerrar conversa</button></div>
+    </div></div>
+  </div>
+  <div id="toastRegion" class="toast-container position-fixed bottom-0 end-0 p-3" aria-live="polite" aria-atomic="true"></div>
+  <script src="/vendor/bootstrap/js/bootstrap.bundle.min.js"></script>
+  <script src="/js/app.js" defer></script>
+</body>
+</html>

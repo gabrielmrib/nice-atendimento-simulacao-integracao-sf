@@ -1,0 +1,23 @@
+{
+  "name": "simulador-betta-nice",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Simulador local de gateway Betta Tech e consola de atendimento",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "axios": "^1.8.4",
+    "bootstrap": "^5.3.3",
+    "bootstrap-icons": "^1.11.3",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "ws": "^8.18.1"
+  },
+  "devDependencies": {
+    "supertest": "^7.1.0"
+  }
+}

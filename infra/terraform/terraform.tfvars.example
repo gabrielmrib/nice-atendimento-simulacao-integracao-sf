@@ -1,0 +1,8 @@
+aws_region   = "us-east-1"
+project_name = "betta-desk-poc"
+deploy_instance = false
+ami_id          = ""
+app_domain      = ""
+instance_type   = "t3.micro"
+availability_zone = "us-east-1a"
+callback_mode   = "mock"
