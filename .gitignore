@@ -6,3 +6,8 @@ npm-debug.log*
 *.tfstate.*
 terraform.tfvars
 crash.log
+.amplify/
+amplify_outputs.json
+dist/
+public/amplify_outputs.json
+public/vendor/

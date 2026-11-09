@@ -6,7 +6,6 @@ const express = require('express');
 const http = require('node:http');
 const path = require('node:path');
 const { randomUUID, timingSafeEqual } = require('node:crypto');
-const { WebSocket, WebSocketServer } = require('ws');
 
 const publicDirectory = path.join(__dirname, 'public');
 const safeImageTypes = new Set(['image/jpeg', 'image/png', 'image/gif', 'image/webp']);
@@ -561,7 +560,7 @@ function createApp(overrides = {}) {
       webhookUrl: settings.webhookUrl,
       clientId: settings.salesforceClientId,
       clientSecretConfigured: Boolean(settings.salesforceClientSecret),
-      persistent: true
+      persistent: typeof store.listConversations === 'function'
     })).catch(next);
   });
   app.post('/api/admin/salesforce/test', async (req, res) => {
@@ -669,48 +668,7 @@ function createApp(overrides = {}) {
 function createServer(overrides = {}) {
   const app = createApp(overrides);
   const server = http.createServer(app);
-  const allowedOrigins = getAllowedOrigins(app.locals.settings);
-  const webSocketServer = new WebSocketServer({
-    server,
-    path: '/ws',
-    verifyClient: ({ origin, req }, done) => {
-      const forwardedProtocol = app.locals.settings.trustProxy ? String(req.headers['x-forwarded-proto'] || '').split(',')[0].trim() : '';
-      if (app.locals.settings.publicNetwork && !req.socket.encrypted && forwardedProtocol !== 'https') return done(false, 400, 'Secure connection required');
-      if (origin && !allowedOrigins.includes(origin) && origin !== getRequestOrigin(req, app.locals.settings.trustProxy)) return done(false, 403, 'Origin not allowed');
-      return done(true);
-    }
-  });
-  app.locals.broadcast = (event, data) => {
-    const serialized = JSON.stringify({ event, data });
-    for (const client of webSocketServer.clients) {
-      if (client.readyState === WebSocket.OPEN && client.isAuthorized) client.send(serialized);
-    }
-  };
-  webSocketServer.on('connection', (socket, request) => {
-    const settings = app.locals.settings;
-    let authorized = !settings.adminToken;
-    const timeout = setTimeout(() => socket.close(4001, 'Authentication required'), 10000);
-    socket.isAuthorized = authorized;
-    const sendConnected = () => {
-      clearTimeout(timeout);
-      socket.isAuthorized = true;
-      socket.send(JSON.stringify({ event: 'CONNECTED', data: {} }));
-    };
-    if (authorized) sendConnected();
-    socket.on('message', (message) => {
-      if (authorized) return;
-      let payload;
-      try { payload = JSON.parse(message.toString()); } catch (error) { return socket.close(4002, 'Invalid authentication message'); }
-      if (payload.event !== 'AUTH' || !matchesSecret(payload.data?.token, settings.adminToken)) return socket.close(4003, 'Invalid credentials');
-      const forwardedProtocol = settings.trustProxy ? String(request.headers['x-forwarded-proto'] || '').split(',')[0].trim() : '';
-      const secureConnection = request.socket.encrypted || forwardedProtocol === 'https';
-      if (settings.publicNetwork && !secureConnection) return socket.close(4004, 'Secure connection required');
-      authorized = true;
-      sendConnected();
-    });
-    socket.on('close', () => clearTimeout(timeout));
-  });
-  return { app, server, webSocketServer };
+  return { app, server };
 }
 
 if (require.main === module) {

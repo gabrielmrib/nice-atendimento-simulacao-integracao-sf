@@ -2,22 +2,38 @@
   "name": "simulador-betta-nice",
   "version": "1.0.0",
   "private": true,
-  "description": "Simulador local de gateway Betta Tech e consola de atendimento",
+  "description": "Simulador de atendimento hospedado em AWS Amplify Gen 2",
   "main": "server.js",
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "start": "node server.js",
+    "typecheck": "tsc --noEmit",
+    "build": "npm run typecheck && node scripts/prepare-amplify-build.mjs",
+    "ampx:sandbox": "ampx sandbox",
+    "ampx:deploy": "ampx pipeline-deploy",
     "test": "node --test"
   },
   "dependencies": {
+    "@aws-sdk/client-dynamodb": "^3.1164.0",
+    "@aws-sdk/lib-dynamodb": "^3.1164.0",
+    "@codegenie/serverless-express": "^4.17.1",
     "axios": "^1.8.4",
     "bootstrap": "^5.3.3",
     "bootstrap-icons": "^1.11.3",
     "cors": "^2.8.5",
     "dotenv": "^16.4.7",
-    "express": "^4.21.2",
-    "ws": "^8.18.1"
+    "express": "^4.21.2"
   },
   "devDependencies": {
-    "supertest": "^7.1.0"
+    "@aws-amplify/backend": "^1.25.1",
+    "@aws-amplify/backend-cli": "^1.10.0",
+    "@types/aws-lambda": "^8.10.164",
+    "@types/node": "^22.20.5",
+    "aws-cdk-lib": "^2.275.0",
+    "constructs": "^10.8.1",
+    "supertest": "^7.3.1",
+    "typescript": "^5.9.3"
   }
 }

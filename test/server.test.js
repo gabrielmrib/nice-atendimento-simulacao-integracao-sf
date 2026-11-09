@@ -1,8 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const request = require('supertest');
-const WebSocket = require('ws');
-const { createApp, createServer, validateNetworkSettings } = require('../server');
+const { createApp, validateNetworkSettings } = require('../server');
 
 function openPayload(identifier = 'session-test-1') {
   return {
@@ -34,6 +33,33 @@ test('abertura é idempotente e publica conversa na fila', async () => {
   assert.equal(list.body.length, 1);
   assert.equal(list.body[0].status, 'QUEUED');
   assert.equal(events.filter(({ event }) => event === 'NEW_QUEUED_CONVERSATION').length, 1);
+});
+
+test('rotas suportam storage assíncrono persistente', async () => {
+  const records = new Map();
+  const store = {
+    get: async (key) => records.get(key),
+    set: async (key, value) => records.set(key, structuredClone(value)),
+    listConversations: async () => [...records.values()].filter((item) => !item._system),
+    clearConversations: async () => {
+      for (const [key, value] of records) if (!value._system) records.delete(key);
+    }
+  };
+  const app = createApp({ store, adminToken: 'admin-key' });
+  await request(app).post('/api/customer/events').send(openPayload());
+  await request(app).put('/api/agent/status').set('X-Admin-Token', 'admin-key').send({ available: false });
+  const savedConfig = await request(app).put('/api/admin/salesforce/config').set('X-Admin-Token', 'admin-key').send({
+    callbackMode: 'mock', tokenUrl: 'https://test.salesforce.com/services/oauth2/token', webhookUrl: '', clientId: '', clientSecret: ''
+  });
+  const conversation = (await request(app).get('/api/agent/conversations/session-test-1').set('X-Admin-Token', 'admin-key')).body;
+  const status = (await request(app).get('/api/agent/status').set('X-Admin-Token', 'admin-key')).body;
+  await request(app).post('/api/demo/reset').set('X-Admin-Token', 'admin-key').send({});
+  assert.equal(conversation.status, 'QUEUED');
+  assert.equal(status.available, false);
+  assert.equal(savedConfig.body.persistent, true);
+  assert.equal(records.has('__integration_config__'), true);
+  assert.equal(records.has('__agent_status__'), true);
+  assert.equal(records.has('session-test-1'), false);
 });
 
 test('mensagens recebidas atualizam o histórico e conversa fechada não reabre', async () => {
@@ -217,56 +243,11 @@ test('configuração Salesforce é protegida e não devolve segredos', async () 
   const config = await request(app).get('/api/admin/salesforce/config').set('X-Admin-Token', 'admin-test-key');
   const tested = await request(app).post('/api/admin/salesforce/test').set('X-Admin-Token', 'admin-test-key').send({});
   assert.equal(denied.status, 401);
-  assert.equal(saved.body.persistent, true);
+  assert.equal(saved.body.persistent, false);
   assert.equal(config.body.clientSecretConfigured, true);
   assert.equal('clientSecret' in config.body, false);
   assert.equal(tested.body.connected, true);
   assert.equal('access_token' in tested.body, false);
-});
-
-test('WebSocket administrativo autentica antes de confirmar conexão', async () => {
-  const instance = createServer({ adminToken: 'admin-test-key' });
-  await new Promise((resolve) => instance.server.listen(0, '127.0.0.1', resolve));
-  const address = instance.server.address();
-  const socket = new WebSocket(`ws://127.0.0.1:${address.port}/ws`);
-  const connected = new Promise((resolve, reject) => {
-    socket.once('open', () => socket.send(JSON.stringify({ event: 'AUTH', data: { token: 'admin-test-key' } })));
-    socket.once('message', (message) => resolve(JSON.parse(message.toString())));
-    socket.once('error', reject);
-  });
-  const event = await connected;
-  assert.equal(event.event, 'CONNECTED');
-  socket.close();
-  await new Promise((resolve) => instance.webSocketServer.close(() => instance.server.close(resolve)));
-});
-
-test('WebSocket de rede rejeita HTTP durante handshake antes da autenticação', async () => {
-  const instance = createServer({
-    adminToken: 'admin-test-key', inboundApiKey: 'inbound-test-key',
-    publicNetwork: true, trustProxy: true
-  });
-  await new Promise((resolve) => instance.server.listen(0, '127.0.0.1', resolve));
-  const address = instance.server.address();
-  const socket = new WebSocket(`ws://127.0.0.1:${address.port}/ws`);
-  const error = await new Promise((resolve) => socket.once('error', resolve));
-  assert.match(error.message, /Unexpected server response: 400/);
-  await new Promise((resolve) => instance.webSocketServer.close(() => instance.server.close(resolve)));
-});
-
-test('WebSocket aceita a própria origem HTTPS dinâmica com proxy confiável', async () => {
-  const instance = createServer({ adminToken: 'admin-test-key', inboundApiKey: 'inbound-test-key', publicNetwork: true, trustProxy: true });
-  await new Promise((resolve) => instance.server.listen(0, '127.0.0.1', resolve));
-  const address = instance.server.address();
-  const origin = `https://127.0.0.1:${address.port}`;
-  const socket = new WebSocket(`ws://127.0.0.1:${address.port}/ws`, { headers: { Origin: origin, 'X-Forwarded-Proto': 'https' } });
-  const connected = new Promise((resolve, reject) => {
-    socket.once('open', () => socket.send(JSON.stringify({ event: 'AUTH', data: { token: 'admin-test-key' } })));
-    socket.once('message', (message) => resolve(JSON.parse(message.toString())));
-    socket.once('error', reject);
-  });
-  assert.equal((await connected).event, 'CONNECTED');
-  socket.close();
-  await new Promise((resolve) => instance.webSocketServer.close(() => instance.server.close(resolve)));
 });
 
 test('valida ação e payload inválido sem derrubar o servidor', async () => {

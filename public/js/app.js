@@ -1,5 +1,5 @@
 (() => {
-  const state = { conversations: [], selectedIdentifier: null, config: null, available: true, revealPrivate: false, socket: null, reconnectAttempt: 0, adminToken: '' };
+  const state = { conversations: [], selectedIdentifier: null, config: null, available: true, revealPrivate: false, apiBaseUrl: '', refreshTimer: null, lastApiErrorAt: 0, adminToken: '' };
   const $ = (selector) => document.querySelector(selector);
   const byId = (id) => document.getElementById(id);
   const closeModal = new bootstrap.Modal(byId('closeModal'));
@@ -44,7 +44,8 @@
       ...(!publicRequest && state.adminToken ? { 'X-Admin-Token': state.adminToken } : {}),
       ...(fetchOptions.headers || {})
     };
-    const response = await fetch(url, { ...fetchOptions, headers });
+    const apiRoot = state.apiBaseUrl.replace(/\/$/, '');
+    const response = await fetch(`${apiRoot}${url}`, { ...fetchOptions, headers });
     const body = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(body.error || `Falha HTTP ${response.status}`);
     return body;
@@ -66,55 +67,34 @@
     const status = byId('socketStatus');
     status.classList.toggle('connected', connected);
     status.classList.toggle('disconnected', !connected);
-    status.lastElementChild.textContent = connected ? 'Tempo real ativo' : 'Reconectando';
+    status.lastElementChild.textContent = connected ? 'API conectada' : 'API indisponível';
   }
 
-  function connectSocket() {
-    if (state.socket && [WebSocket.OPEN, WebSocket.CONNECTING].includes(state.socket.readyState)) return;
-    const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const socket = new WebSocket(`${protocol}//${location.host}/ws`);
-    state.socket = socket;
-    socket.addEventListener('open', () => {
-      if (state.config?.authRequired) socket.send(JSON.stringify({ event: 'AUTH', data: { token: state.adminToken } }));
-    });
-    socket.addEventListener('message', (message) => {
-      try {
-        const event = JSON.parse(message.data);
-        if (event.event === 'CONNECTED') {
-          state.reconnectAttempt = 0;
-          setSocketStatus(true);
-          refresh();
-          return;
-        }
-        if (event.event === 'SNAPSHOT_RESET') state.selectedIdentifier = null;
-        if (event.event === 'AGENT_STATUS_UPDATED') {
-          state.available = event.data.available;
-          renderAgentStatus();
-        }
-        if (event.event === 'CONVERSATION_UPDATED' || event.event === 'CONVERSATION_CLOSED' || event.event === 'NEW_QUEUED_CONVERSATION') {
-          const current = getSelected();
-          state.selectedIdentifier = current?.identifier || state.selectedIdentifier;
-        }
-        refresh();
-      } catch (error) { console.warn('Evento WebSocket inválido.'); }
-    });
-    socket.addEventListener('close', () => {
-      setSocketStatus(false);
-      const delay = Math.min(1000 * (2 ** state.reconnectAttempt), 12000);
-      state.reconnectAttempt += 1;
-      window.setTimeout(connectSocket, delay);
-    });
-    socket.addEventListener('error', () => socket.close());
+  function startPolling() {
+    if (state.refreshTimer) window.clearInterval(state.refreshTimer);
+    setSocketStatus(true);
+    refresh();
+    state.refreshTimer = window.setInterval(() => {
+      if (!document.hidden) refresh();
+    }, 2500);
+    window.addEventListener('focus', refresh);
   }
 
   async function refresh() {
     try {
       state.conversations = await api('/api/agent/conversations');
+      setSocketStatus(true);
       if (state.selectedIdentifier && !state.conversations.some((item) => item.identifier === state.selectedIdentifier)) state.selectedIdentifier = null;
       renderQueue();
       renderConversation();
       renderContext();
-    } catch (error) { showToast(error.message, 'error'); }
+    } catch (error) {
+      setSocketStatus(false);
+      if (Date.now() - state.lastApiErrorAt > 10000) {
+        state.lastApiErrorAt = Date.now();
+        showToast(error.message, 'error');
+      }
+    }
   }
 
   function renderQueue() {
@@ -316,11 +296,23 @@
     state.conversations = await api('/api/agent/conversations');
     renderQueue(); renderConversation(); renderContext();
     setMobilePanel('chatPanel');
-    connectSocket();
+    startPolling();
+  }
+
+  async function loadAmplifyOutputs() {
+    try {
+      const response = await fetch('/amplify_outputs.json', { cache: 'no-store' });
+      if (!response.ok) return;
+      const outputs = await response.json();
+      state.apiBaseUrl = outputs.custom?.api?.endpoint || '';
+    } catch (error) {
+      state.apiBaseUrl = '';
+    }
   }
 
   async function initialize() {
     try {
+      await loadAmplifyOutputs();
       state.config = await api('/api/config', { publicRequest: true });
       if (state.config.authRequired) {
         adminAuthModal.show();
@@ -403,8 +395,10 @@
     button.disabled = true;
     try {
       const result = await saveConnectionSettings();
-      byId('connectionStateLabel').textContent = 'Salva em memória';
-      byId('connectionFeedback').textContent = 'Configuração aplicada até o servidor reiniciar. Para persistir na AWS, use SSM Parameter Store ou AWS Secrets Manager.';
+      byId('connectionStateLabel').textContent = result.persistent ? 'Salva no backend' : 'Salva em memória';
+      byId('connectionFeedback').textContent = result.persistent
+        ? 'Configuração salva no backend Amplify e protegida no DynamoDB.'
+        : 'Configuração aplicada até o servidor local reiniciar.';
       byId('connectionFeedback').classList.remove('d-none', 'error');
       if (result.callbackMode === 'mock') showToast('Modo local ativado. Nenhum callback externo será enviado.', 'info');
     } catch (error) {

@@ -56,20 +56,26 @@ class DynamoConversationStore {
       const result = await this.client.send(new ScanCommand({
         TableName: this.tableName,
         FilterExpression: 'attribute_not_exists(#system)',
-        ExpressionAttributeNames: { '#system': '_system' },
-        ProjectionExpression: '#identifier',
         ExpressionAttributeNames: { '#system': '_system', '#identifier': 'identifier' },
+        ProjectionExpression: '#identifier',
         ExclusiveStartKey: lastEvaluatedKey
       }));
       const items = result.Items || [];
       for (let offset = 0; offset < items.length; offset += 25) {
-        await this.client.send(new BatchWriteCommand({
-          RequestItems: {
-            [this.tableName]: items.slice(offset, offset + 25).map((item) => ({
-              DeleteRequest: { Key: { identifier: item.identifier } }
-            }))
+        let unprocessedItems = {
+          [this.tableName]: items.slice(offset, offset + 25).map((item) => ({
+            DeleteRequest: { Key: { identifier: item.identifier } }
+          }))
+        };
+        let retry = 0;
+        while (Object.keys(unprocessedItems).length && unprocessedItems[this.tableName]?.length) {
+          const response = await this.client.send(new BatchWriteCommand({ RequestItems: unprocessedItems }));
+          unprocessedItems = response.UnprocessedItems || {};
+          if (unprocessedItems[this.tableName]?.length) {
+            await new Promise((resolve) => setTimeout(resolve, Math.min(1000, 50 * (2 ** retry))));
+            retry += 1;
           }
-        }));
+        }
       }
       lastEvaluatedKey = result.LastEvaluatedKey;
     } while (lastEvaluatedKey);
